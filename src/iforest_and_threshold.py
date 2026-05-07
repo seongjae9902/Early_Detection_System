@@ -1,7 +1,14 @@
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
-FEATURES = ["packet_count", "total_bytes", "avg_bytes", "iat_mean"]
+FEATURES = [
+    "packet_count",
+    "total_bytes",
+    "avg_bytes",
+    "iat_mean",
+    "unique_dst_ip",
+    "unique_dst_port"
+]
 
 def iforest(csv_path, output_csv_path):
     # Load CSV

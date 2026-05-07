@@ -7,12 +7,14 @@ def extract_features(pcap_path, output_csv_path, window_size):
     # Then, extract the time and size of each packets
     # -------------------
     cmd = [
-        "tshark", "-r", pcap_path,
+        "tshark", "-r", str(pcap_path),
         "-T", "fields",
         "-e", "frame.time_epoch",
-        "-e", "frame.len"
+        "-e", "frame.len",
+        "-e", "ip.dst",
+        "-e", "tcp.dstport",
+        "-e", "udp.dstport"
     ]
-
 
     # -------------------
     # Get lines from results
@@ -20,28 +22,37 @@ def extract_features(pcap_path, output_csv_path, window_size):
     # append fairs of each after casting to float/int
     # -------------------
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    lines = result.stdout.strip().split("\n")
+    if result.returncode != 0:
+        print("== TSHARK ERROR ==")
+        print(result.stderr)
+        raise RuntimeError("tshark failed")
+    lines = result.stdout.splitlines()
 
     data = []
     for line in lines:
-        parts = line.split("\t")
-        if len(parts) == 2:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) >= 2:
             try:
                 t = float(parts[0])
                 size = int(parts[1])
-                data.append((t, size))
+                dst_ip = parts[2] if len(parts) > 2 else ""
+                tcp_port = parts[3] if len(parts) > 3 else ""
+                udp_port = parts[4] if len(parts) > 4 else ""
+                dst_port = tcp_port if tcp_port else udp_port
+                data.append((t, size, dst_ip, dst_port))
             except ValueError:
                 pass
 
     if len(data) == 0:
         features = pd.DataFrame(columns=[
-            "packet_count", "total_bytes", "avg_bytes", "iat_mean"
+            "packet_count", "total_bytes", "avg_bytes", "iat_mean",
+            "unique_dst_ip", "unique_dst_port"
         ])
         if output_csv_path is not None:
             features.to_csv(output_csv_path, index=False)
         return features
     
-    df = pd.DataFrame(data, columns=["time", "size"])
+    df = pd.DataFrame(data, columns=["time", "size", "dst_ip", "dst_port"])
     df = df.sort_values("time")
 
     start_time = df["time"].min()
@@ -59,13 +70,23 @@ def extract_features(pcap_path, output_csv_path, window_size):
             avg_bytes = window_df["size"].mean()
             iat = window_df["time"].diff().dropna()
             iat_mean = iat.mean() if len(iat) > 0 else 0
+            unique_dst_ip = window_df["dst_ip"].replace("", pd.NA).dropna().nunique()
+            unique_dst_port = window_df["dst_port"].replace("", pd.NA).dropna().nunique()
 
-            windows.append([packet_count, total_bytes, avg_bytes, iat_mean])
+            windows.append([
+                packet_count,
+                total_bytes,
+                avg_bytes,
+                iat_mean,
+                unique_dst_ip,
+                unique_dst_port
+            ])
 
         current += window_size
 
     features = pd.DataFrame(windows, columns=[
-        "packet_count", "total_bytes", "avg_bytes", "iat_mean"
+        "packet_count", "total_bytes", "avg_bytes", "iat_mean",
+        "unique_dst_ip", "unique_dst_port"
     ])
 
     if output_csv_path is not None:

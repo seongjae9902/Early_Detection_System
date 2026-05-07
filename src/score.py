@@ -1,6 +1,13 @@
 from extract_features import extract_features
 
-FEATURES = ["packet_count", "total_bytes", "avg_bytes", "iat_mean"]
+FEATURES = [
+    "packet_count",
+    "total_bytes",
+    "avg_bytes",
+    "iat_mean",
+    "unique_dst_ip",
+    "unique_dst_port"
+]
 
 def scoring(pcap_path, window_size, model):
     df = extract_features(pcap_path, None, window_size)

@@ -4,8 +4,16 @@ import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import select
 
-FEATURES = ["packet_count", "total_bytes", "avg_bytes", "iat_mean"]
+FEATURES = [
+    "packet_count",
+    "total_bytes",
+    "avg_bytes",
+    "iat_mean",
+    "unique_dst_ip",
+    "unique_dst_port"
+]
 
 def compute_features(buffer):
     if not buffer:
@@ -13,10 +21,14 @@ def compute_features(buffer):
     
     times = [x[0] for x in buffer]
     sizes = [x[1] for x in buffer]
+    dst_ips = [x[2] for x in buffer]
+    dst_ports = [x[3] for x in buffer]
 
     packet_count = len(sizes)
     total_bytes = sum(sizes)
     avg_bytes = total_bytes / packet_count if packet_count > 0 else 0
+    unique_dst_ip = len(set(ip for ip in dst_ips if ip != ""))
+    unique_dst_port = len(set(port for port in dst_ports if port != ""))
 
     if len(times) > 1:
         iats = np.diff(times)
@@ -28,7 +40,9 @@ def compute_features(buffer):
         "packet_count": packet_count,
         "total_bytes": total_bytes,
         "avg_bytes": avg_bytes,
-        "iat_mean": iat_mean
+        "iat_mean": iat_mean,
+        "unique_dst_ip": unique_dst_ip,
+        "unique_dst_port": unique_dst_port
     }
 
 def classify_score(score, base_threshold, ext_threshold):
@@ -54,16 +68,21 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
         "tshark",
         "-i", interface,
         "-l",
+        "-n",
         "-T", "fields",
         "-e", "frame.time_epoch",
-        "-e", "frame.len"
+        "-e", "frame.len",
+        "-e", "ip.dst",
+        "-e", "tcp.dstport",
+        "-e", "udp.dstport"
     ]
 
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
-        text=True
+        text=True,
+        bufsize=1
     )
 
     print("==== Real-Time Monitoring Started ====")
@@ -74,16 +93,24 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
 
     try:
         while True:
-            line = process.stdout.readline().strip()
+            line = ""
+
+            ready, _, _ = select.select([process.stdout], [], [], 0.1)
+            if ready:
+                line = process.stdout.readline().rstrip("\n")
             #print("RAW:", repr(line))
 
             if line:
                 parts = line.split("\t")
-                if len(parts) == 2:
+                if len(parts) >= 2:
                     try:
                         pkt_time = float(parts[0])
                         pkt_size = int(parts[1])
-                        buffer.append((pkt_time, pkt_size))
+                        dst_ip = parts[2] if len(parts) > 2 else ""
+                        tcp_port = parts[3] if len(parts) > 3 else ""
+                        udp_port = parts[4] if len(parts) > 4 else ""
+                        dst_port = tcp_port if tcp_port else udp_port
+                        buffer.append((pkt_time, pkt_size, dst_ip, dst_port))
                     except ValueError:
                         pass
             
@@ -157,6 +184,10 @@ def save_monitoring_plots(history):
         print("No monitoring history to plot.")
         return
     
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    RESULT_DIR = BASE_DIR / "results"
+    RESULT_DIR.mkdir((exist_ok=True))
+
     steps = [h["step"] for h in history]
     scores = [h["anomaly_score"] for h in history]
     base_thresholds = [h["base_threshold"] for h in history]
@@ -172,7 +203,7 @@ def save_monitoring_plots(history):
     plt.title("Adaptive Threshold Over Time")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("threshold_over_time.png", dpi=300)
+    plt.savefig(RESULT_DIR / "threshold_over_time.png", dpi=300)
     plt.close()
 
     # 2. Anomaly score over time
@@ -185,7 +216,7 @@ def save_monitoring_plots(history):
     plt.title("Anomaly Score Over Time")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("anomaly_score_over_time.png", dpi=300)
+    plt.savefig(RESULT_DIR / "anomaly_score_over_time.png", dpi=300)
     plt.close()
 
     # 3. Level count bar chart
@@ -198,7 +229,7 @@ def save_monitoring_plots(history):
     plt.ylabel("Count")
     plt.title("Detection Level Counts")
     plt.tight_layout()
-    plt.savefig("level_count_bar_chart.png", dpi=300)
+    plt.savefig(RESULT_DIR / "level_count_bar_chart.png", dpi=300)
     plt.close()
 
     print("Saved")

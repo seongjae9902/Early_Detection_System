@@ -1,11 +1,15 @@
 from extract_features import extract_features
 from iforest_and_threshold import iforest
 from monitor import monitor
+from pathlib import Path
 
 def main():
-    baseline_pcap = "baseline_train.pcap"
-    features_csv = "baseline_train_features.csv"
-    scored_csv = "baseline_scored.csv"
+    BASE_DIR = Path(__file__).resolve().parent.parent
+
+    baseline_pcap = BASE_DIR / "data/pcap/baseline_train.pcap"
+    features_csv = BASE_DIR / "data/features/baseline_train_features.csv"
+    scored_csv = BASE_DIR / "results/baseline_scored.csv"
+
     window_size = 5
     interface = "enp0s8"
 
