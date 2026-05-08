@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import select
+from pathlib import Path
 
 FEATURES = [
     "packet_count",
@@ -139,12 +140,12 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                     
                     high_risk = sum(risk_window) >= 3
 
-                    if not high_risk and score < ext_threshold:
+                    if not high_risk and score < base_threshold:
                         recent_scores.append(score)
                     
                     if not high_risk and len(recent_scores) >= 30:
                         recent_p95 = np.percentile(list(recent_scores), 95)
-                        base_threshold =0.8 * base_threshold + 0.2 * recent_p95
+                        base_threshold = 0.8 * base_threshold + 0.2 * recent_p95
                     
                     level = classify_score(score, base_threshold, ext_threshold)
 
@@ -186,7 +187,7 @@ def save_monitoring_plots(history):
     
     BASE_DIR = Path(__file__).resolve().parent.parent
     RESULT_DIR = BASE_DIR / "results"
-    RESULT_DIR.mkdir((exist_ok=True))
+    RESULT_DIR.mkdir(exist_ok=True)
 
     steps = [h["step"] for h in history]
     scores = [h["anomaly_score"] for h in history]
