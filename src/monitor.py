@@ -59,7 +59,7 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
     risk_window = deque(maxlen=10)
 
     consecutive_suspicious = 0
-    Persistence_threshold = 15
+    Persistence_threshold = 30
 
     history = []
     step_count = 0
@@ -231,7 +231,15 @@ def save_monitoring_plots(history):
     plt.close()
 
     # 2. Anomaly score over time
+    phase_lines = {
+        "DRIFT": 180,
+        "BEACON": 420,
+        "BURST": 720
+    }
     plt.figure()
+    for label, x in phase_lines.items():
+        plt.axvline(x=x, linestyle=":", linewidth=1)
+        plt.text(x, max(scores), label, rotation=90, verticalalignment="top")
     plt.plot(steps, scores, label="Anomaly Score")
     plt.plot(steps, base_thresholds, linestyle="--", label="Base Threshold")
     plt.plot(steps, ext_thresholds, linestyle="--", label="Extreme Threshold")
@@ -254,6 +262,25 @@ def save_monitoring_plots(history):
     plt.title("Detection Level Counts")
     plt.tight_layout()
     plt.savefig(RESULT_DIR / "level_count_bar_chart.png", dpi=300)
+    plt.close()
+
+    # 4. Level over time
+    level_map = {"NORMAL": 0, "SUSPICIOUS": 1, "ATTACK": 2}
+    level_values = [level_map[level] for level in levels]
+
+    plt.figure()
+    plt.plot(steps, level_values)
+    plt.yticks([0, 1, 2], ["NORMAL", "SUSPICIOUS", "ATTACK"])
+    plt.xlabel("Window Step")
+    plt.ylabel("Detection Level")
+    plt.title("Detection Level Over Time")
+
+    for label, x in phase_lines.items():
+        plt.axvline(x=x, linestyle=":", linewidth=1)
+        plt.text(x, 2, label, rotation=90, verticalalignment="top")
+
+    plt.tight_layout()
+    plt.savefig(RESULT_DIR / "detection_level_over_time.png", dpi=300)
     plt.close()
 
     print("Saved")
