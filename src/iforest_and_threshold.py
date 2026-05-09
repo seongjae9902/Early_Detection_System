@@ -33,13 +33,13 @@ def iforest(csv_path, output_csv_path):
     # Top 5% is a little doubted
     # Top 0.5% is considered as anomaly
     base_threshold = df["anomaly_score"].quantile(0.95)
-    ext_threshold = df["anomaly_score"].quantile(0.995)
+    ext_threshold = df["anomaly_score"].quantile(0.99)
 
     # Print results
     print("=====Isolation Forest Results=====")
     print(f"Total Windows              : {len(df)}")
     print(f"Base threshold (0.95)      : {base_threshold:.6f}")
-    print(f"Extreme threshold (0.995)  : {ext_threshold:.6f}")
+    print(f"Extreme threshold (0.99)  : {ext_threshold:.6f}")
 
     # Save scored data
     if output_csv_path is not None:
