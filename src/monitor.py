@@ -46,10 +46,10 @@ def compute_features(buffer):
         "unique_dst_port": unique_dst_port
     }
 
-def classify_score(score, base_threshold, high_risk):
+def classify_score(high_risk, is_suspicious):
     if high_risk:
         return "ATTACK"
-    elif score > base_threshold:
+    elif is_suspicious:
         return "SUSPICIOUS"
     else:
         return "NORMAL"
@@ -57,6 +57,9 @@ def classify_score(score, base_threshold, high_risk):
 def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step_size=1):
     recent_scores = deque(maxlen=30)
     risk_window = deque(maxlen=10)
+
+    consecutive_suspicious = 0
+    Persistence_threshold = 15
 
     history = []
     step_count = 0
@@ -133,12 +136,17 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                     X = pd.DataFrame([feat])[FEATURES]
                     score = -model.decision_function(X)[0]
 
-                    if score > ext_threshold:
-                        risk_window.append(1)
+                    is_suspicious = score > base_threshold
+                    is_extreme = score > ext_threshold
+
+                    if is_suspicious:
+                        consecutive_suspicious += 1
                     else:
-                        risk_window.append(0)
+                        consecutive_suspicious = 0
                     
-                    high_risk = sum(risk_window) >= 3
+                    high_risk = is_extreme or (consecutive_suspicious >= Persistence_threshold)
+
+                    level = classify_score(high_risk, is_suspicious)
 
                     Min_Base_Threshold = 0.08
 
@@ -147,12 +155,10 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                     
                     if not high_risk and len(recent_scores) >= 30:
                         recent_p95 = np.percentile(list(recent_scores), 95)
-                        base_thresfold = max(
+                        base_threshold = max(
                             Min_Base_Threshold,
                             0.8 * base_threshold + 0.2 * recent_p95
                         )
-                    
-                    level = classify_score(score, base_threshold, high_risk)
 
                     history.append({
                         "step": step_count,
@@ -166,7 +172,9 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                         "base_threshold": base_threshold,
                         "ext_threshold": ext_threshold,
                         "level": level,
-                        "high_risk": high_risk
+                        "high_risk": high_risk,
+                        "consecutive_suspicious": consecutive_suspicious,
+                        "is_extreme": is_extreme
                     })
 
                     step_count += 1
@@ -179,6 +187,7 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                     print(f"Anomaly Score  : {score:.6f}")
                     print(f"Base Threshold : {base_threshold:.6f}")
                     print(f"Extreme Thresh : {ext_threshold:.6f}")
+                    print(f"Conse Susp     : {consecutive_suspicious}")
                     print(f"High Risk      : {high_risk}")
                     print("-" * 50)
                 else:
@@ -190,13 +199,6 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
         print("\nMonitoring stopped")
         process.terminate()
         save_monitoring_plots(history)
-    
-    BASE_DIR = Path(__file__).resolve().parent.parent
-    RESULT_DIR = BASE_DIR / "results"
-    RESULT_DIR.mkdir(exist_ok=True)
-    
-    df = pd.DataFrame(history)
-    df.to_csv(RESULT_DIR / "monitor_history.csv", index=False)
 
 def save_monitoring_plots(history):
     if not history:
@@ -206,6 +208,9 @@ def save_monitoring_plots(history):
     BASE_DIR = Path(__file__).resolve().parent.parent
     RESULT_DIR = BASE_DIR / "results"
     RESULT_DIR.mkdir(exist_ok=True)
+
+    df = pd.DataFrame(history)
+    df.to_csv(RESULT_DIR / "monitor_history.csv", index=False)
 
     steps = [h["step"] for h in history]
     scores = [h["anomaly_score"] for h in history]
