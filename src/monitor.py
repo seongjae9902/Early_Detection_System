@@ -46,8 +46,8 @@ def compute_features(buffer):
         "unique_dst_port": unique_dst_port
     }
 
-def classify_score(score, base_threshold, ext_threshold):
-    if score > ext_threshold:
+def classify_score(score, base_threshold, high_risk):
+    if high_risk:
         return "ATTACK"
     elif score > base_threshold:
         return "SUSPICIOUS"
@@ -152,7 +152,7 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                             0.8 * base_threshold + 0.2 * recent_p95
                         )
                     
-                    level = classify_score(score, base_threshold, ext_threshold)
+                    level = classify_score(score, base_threshold, high_risk)
 
                     history.append({
                         "step": step_count,
