@@ -105,7 +105,7 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                 parts = line.split("\t")
                 if len(parts) >= 2:
                     try:
-                        pkt_time = float(parts[0])
+                        pkt_time = time.time()
                         pkt_size = int(parts[1])
                         dst_ip = parts[2] if len(parts) > 2 else ""
                         tcp_port = parts[3] if len(parts) > 3 else ""
@@ -151,6 +151,12 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
 
                     history.append({
                         "step": step_count,
+                        "packet_count": feat["packet_count"],
+                        "total_bytes": feat["total_bytes"],
+                        "avg_bytes": feat["avg_bytes"],
+                        "iat_mean": feat["iat_mean"],
+                        "unique_dst_ip": feat["unique_dst_ip"],
+                        "unique_dst_port": feat["unique_dst_port"],
                         "anomaly_score": score,
                         "base_threshold": base_threshold,
                         "ext_threshold": ext_threshold,
@@ -179,6 +185,13 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
         print("\nMonitoring stopped")
         process.terminate()
         save_monitoring_plots(history)
+    
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    RESULT_DIR = BASE_DIR / "results"
+    RESULT_DIR.mkdir(exist_ok=True)
+    
+    df = pd.DataFrame(history)
+    df.to_csv(RESULT_DIR / "monitor_history.csv", index=False)
 
 def save_monitoring_plots(history):
     if not history:
