@@ -150,7 +150,7 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
 
                     Min_Base_Threshold = 0.08
 
-                    if not high_risk and score < base_threshold:
+                    if not high_risk and consecutive_suspicious < Persistence_threshold:
                         recent_scores.append(score)
                     
                     if not high_risk and len(recent_scores) >= 30:
