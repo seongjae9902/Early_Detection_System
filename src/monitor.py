@@ -59,7 +59,7 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
     risk_window = deque(maxlen=10)
 
     consecutive_suspicious = 0
-    Persistence_threshold = 30
+    Persistence_threshold = 60
     Min_Base_Threshold = 0.08
     Adapt_Suspicious_Limit = 5
     Adapt_Max_Score_Ratio = 0.75
