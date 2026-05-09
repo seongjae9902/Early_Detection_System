@@ -62,7 +62,8 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
     Persistence_threshold = 60
     Min_Base_Threshold = 0.08
     Adapt_Suspicious_Limit = 5
-    Adapt_Max_Score_Ratio = 0.75
+    Adapt_Max_Score_Ratio = 0.5 * (base_threshold - ext_threshold)
+    adapt_score_limit = base_threshold + Adapt_Max_Score_Ratio
 
     history = []
     step_count = 0
@@ -150,8 +151,6 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                     high_risk = is_extreme or (consecutive_suspicious >= Persistence_threshold)
 
                     level = classify_score(high_risk, is_suspicious)
-
-                    adapt_score_limit = base_threshold + Adapt_Max_Score_Ratio * (ext_threshold - base_threshold)
 
                     if (
                         not high_risk
