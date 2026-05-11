@@ -58,11 +58,15 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
     recent_scores = deque(maxlen=30)
     risk_window = deque(maxlen=10)
 
+    phase_steps = {"NORMAL": 0}
+    pending_phase = None
+
     consecutive_suspicious = 0
     Persistence_threshold = 60
     Min_Base_Threshold = 0.08
+    Small_Margin = 0.005
     Adapt_Suspicious_Limit = 5
-    Adapt_Max_Score_Ratio = 0.5 * (base_threshold - ext_threshold)
+    Adapt_Max_Score_Ratio = 0.5 * (ext_threshold - base_threshold)
     adapt_score_limit = base_threshold + Adapt_Max_Score_Ratio
 
     history = []
@@ -118,6 +122,17 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                         tcp_port = parts[3] if len(parts) > 3 else ""
                         udp_port = parts[4] if len(parts) > 4 else ""
                         dst_port = tcp_port if tcp_port else udp_port
+
+                        marker_ports = {
+                            "7772": "DRIFT",
+                            "7773": "BEACON",
+                            "7774": "BURST"
+                        }
+
+                        if dst_port in marker_ports:
+                            pending_phase = marker_ports[dst_port]
+                            continue
+
                         buffer.append((pkt_time, pkt_size, dst_ip, dst_port))
                     except ValueError:
                         pass
@@ -134,13 +149,19 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
             #    print("OLDEST", buffer[0][0], "NEWEST", buffer[-1][0])
             # Evaluate every 1 second
             if current_time - last_eval >= step_size:
+                current_step = step_count
+
+                if pending_phase is not None and pending_phase not in phase_steps:
+                    phase_steps[pending_phase] = current_step
+                    pending_phase = None
+                
                 feat = compute_features(buffer)
 
                 if feat is not None:
                     X = pd.DataFrame([feat])[FEATURES]
                     score = -model.decision_function(X)[0]
 
-                    is_suspicious = score > base_threshold
+                    is_suspicious = score > (base_threshold + Small_Margin)
                     is_extreme = score > ext_threshold
 
                     if is_suspicious:
@@ -167,7 +188,7 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                         )
 
                     history.append({
-                        "step": step_count,
+                        "step": current_step,
                         "packet_count": feat["packet_count"],
                         "total_bytes": feat["total_bytes"],
                         "avg_bytes": feat["avg_bytes"],
@@ -183,8 +204,7 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                         "is_extreme": is_extreme
                     })
 
-                    step_count += 1
-
+                    print(f"Steps          : {current_step}")
                     print(f"Level          : {level}")
                     print(f"Packet Count   : {feat['packet_count']}")
                     print(f"Total Bytes    : {feat['total_bytes']} bytes")
@@ -200,13 +220,14 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                     print(f"Level         : NO TRAFFIC")
                     print("-" * 50)
                 
+                step_count += 1
                 last_eval = current_time
     except KeyboardInterrupt:
         print("\nMonitoring stopped")
         process.terminate()
-        save_monitoring_plots(history)
+        save_monitoring_plots(history, phase_steps)
 
-def save_monitoring_plots(history):
+def save_monitoring_plots(history, phase_steps):
     if not history:
         print("No monitoring history to plot.")
         return
@@ -226,6 +247,10 @@ def save_monitoring_plots(history):
 
     # 1. Threshold only graph
     plt.figure()
+    for label, x in phase_steps.items():
+        plt.axvline(x=x, linestyle=":", linewidth=1)
+        text_x = x + 3 if x == 0 else x + 3
+        plt.text(x, max(scores), label, rotation=90, verticalalignment="top")
     plt.plot(steps, base_thresholds, label="Base Threshold")
     plt.plot(steps, ext_thresholds, label="Extreme Threshold")
     plt.xlabel("Window Step")
@@ -237,14 +262,10 @@ def save_monitoring_plots(history):
     plt.close()
 
     # 2. Anomaly score over time
-    phase_lines = {
-        "DRIFT": 180,
-        "BEACON": 420,
-        "BURST": 720
-    }
     plt.figure()
-    for label, x in phase_lines.items():
+    for label, x in phase_steps.items():
         plt.axvline(x=x, linestyle=":", linewidth=1)
+        text_x = x + 3 if x == 0 else x + 3
         plt.text(x, max(scores), label, rotation=90, verticalalignment="top")
     plt.plot(steps, scores, label="Anomaly Score")
     plt.plot(steps, base_thresholds, linestyle="--", label="Base Threshold")
@@ -281,7 +302,7 @@ def save_monitoring_plots(history):
     plt.ylabel("Detection Level")
     plt.title("Detection Level Over Time")
 
-    for label, x in phase_lines.items():
+    for label, x in phase_steps.items():
         plt.axvline(x=x, linestyle=":", linewidth=1)
         plt.text(x, 2, label, rotation=90, verticalalignment="top")
 
