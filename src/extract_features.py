@@ -45,8 +45,8 @@ def extract_features(pcap_path, output_csv_path, window_size):
 
     if len(data) == 0:
         features = pd.DataFrame(columns=[
-            "packet_count", "total_bytes", "avg_bytes", "iat_mean",
-            "unique_dst_ip", "unique_dst_port"
+            "packet_count", "total_bytes", "avg_bytes", "iat_mean", "iat_std",
+            "unique_dst_ip", "unique_dst_port", "top_dst_port_ratio"
         ])
         if output_csv_path is not None:
             features.to_csv(output_csv_path, index=False)
@@ -70,6 +70,14 @@ def extract_features(pcap_path, output_csv_path, window_size):
             avg_bytes = window_df["size"].mean()
             iat = window_df["time"].diff().dropna()
             iat_mean = iat.mean() if len(iat) > 0 else 0
+            iat_std = iat.std(ddof=0) if len(iat) > 1 else 0
+
+            valid_ports = window_df["dst_port"].replace("", pd.NA).dropna()
+            if len(valid_ports) >= 2:
+                top_dst_port_ratio = valid_ports.value_counts().max() / len(valid_ports)
+            else:
+                top_dst_port_ratio = 0
+            
             unique_dst_ip = window_df["dst_ip"].replace("", pd.NA).dropna().nunique()
             unique_dst_port = window_df["dst_port"].replace("", pd.NA).dropna().nunique()
 
@@ -78,15 +86,17 @@ def extract_features(pcap_path, output_csv_path, window_size):
                 total_bytes,
                 avg_bytes,
                 iat_mean,
+                iat_std,
                 unique_dst_ip,
-                unique_dst_port
+                unique_dst_port,
+                top_dst_port_ratio
             ])
 
         current += window_size
 
     features = pd.DataFrame(windows, columns=[
-        "packet_count", "total_bytes", "avg_bytes", "iat_mean",
-        "unique_dst_ip", "unique_dst_port"
+        "packet_count", "total_bytes", "avg_bytes", "iat_mean", "iat_std",
+        "unique_dst_ip", "unique_dst_port", "top_dst_port_ratio"
     ])
 
     if output_csv_path is not None:

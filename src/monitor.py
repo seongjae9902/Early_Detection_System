@@ -12,8 +12,10 @@ FEATURES = [
     "total_bytes",
     "avg_bytes",
     "iat_mean",
+    "iat_std",
     "unique_dst_ip",
-    "unique_dst_port"
+    "unique_dst_port",
+    "top_dst_port_ratio"
 ]
 
 def compute_features(buffer):
@@ -34,16 +36,28 @@ def compute_features(buffer):
     if len(times) > 1:
         iats = np.diff(times)
         iat_mean = float(np.mean(iats))
+        iat_std = float(np.std(iats)) if len(iats) > 1 else 0.0
     else:
         iat_mean = 0.0
+        iat_std = 0.0
+    
+    valid_ports = [port for port in dst_ports if port != ""]
+
+    if len(valid_ports) >= 2:
+        counts = pd.Series(valid_ports).value_counts()
+        top_dst_port_ratio = float(counts.max() / len(valid_ports))
+    else:
+        top_dst_port_ratio = 0.0
     
     return {
         "packet_count": packet_count,
         "total_bytes": total_bytes,
         "avg_bytes": avg_bytes,
         "iat_mean": iat_mean,
+        "iat_std": iat_std,
         "unique_dst_ip": unique_dst_ip,
-        "unique_dst_port": unique_dst_port
+        "unique_dst_port": unique_dst_port,
+        "top_dst_port_ratio": top_dst_port_ratio
     }
 
 def classify_score(high_risk, is_suspicious):
@@ -56,18 +70,23 @@ def classify_score(high_risk, is_suspicious):
 
 def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step_size=1):
     recent_scores = deque(maxlen=30)
-    risk_window = deque(maxlen=10)
+    risk_window = deque(maxlen=60)
+    Persistence_threshold = 60
+    Suspicious_Ratio_Threshold = 0.75
 
     phase_steps = {"NORMAL": 0}
     pending_phase = None
 
-    consecutive_suspicious = 0
-    Persistence_threshold = 60
     Min_Base_Threshold = 0.08
+    consecutive_suspicious = 0
     Small_Margin = 0.005
     Adapt_Suspicious_Limit = 5
     Adapt_Max_Score_Ratio = 0.5 * (ext_threshold - base_threshold)
     adapt_score_limit = base_threshold + Adapt_Max_Score_Ratio
+
+    consecutive_extreme = 0
+    Min_Packets_for_Attack = 5
+    Extreme_Streak_Threshold = 3
 
     history = []
     step_count = 0
@@ -168,8 +187,23 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                         consecutive_suspicious += 1
                     else:
                         consecutive_suspicious = 0
+
+                    risk_window.append(1 if is_suspicious else 0)
+
+                    persistent_suspicious = (
+                        len(risk_window) == Persistence_threshold
+                        and sum(risk_window) >= Persistence_threshold * Suspicious_Ratio_Threshold
+                    )
                     
-                    high_risk = is_extreme or (consecutive_suspicious >= Persistence_threshold)
+                    if is_extreme and feat["packet_count"] >= Min_Packets_for_Attack:
+                        consecutive_extreme += 1
+                    else:
+                        consecutive_extreme = 0
+
+                    high_risk = (
+                        consecutive_extreme >= Extreme_Streak_Threshold
+                        or persistent_suspicious
+                    )
 
                     level = classify_score(high_risk, is_suspicious)
 
@@ -193,15 +227,19 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                         "total_bytes": feat["total_bytes"],
                         "avg_bytes": feat["avg_bytes"],
                         "iat_mean": feat["iat_mean"],
+                        "iat_std": feat["iat_std"],
                         "unique_dst_ip": feat["unique_dst_ip"],
                         "unique_dst_port": feat["unique_dst_port"],
+                        "top_dst_port_ratio": feat["top_dst_port_ratio"],
                         "anomaly_score": score,
                         "base_threshold": base_threshold,
                         "ext_threshold": ext_threshold,
                         "level": level,
                         "high_risk": high_risk,
                         "consecutive_suspicious": consecutive_suspicious,
-                        "is_extreme": is_extreme
+                        "consecutive_extreme": consecutive_extreme,
+                        "is_extreme": is_extreme,
+                        "min_packet_gate": feat["packet_count"] >= Min_Packets_for_Attack
                     })
 
                     print(f"Steps          : {current_step}")
@@ -210,10 +248,13 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                     print(f"Total Bytes    : {feat['total_bytes']} bytes")
                     print(f"Avg Packet     : {feat['avg_bytes']:.2f} bytes")
                     print(f"IAT Mean       : {feat['iat_mean']:.4f} sec")
+                    print(f"IAT Std        : {feat['iat_std']:.4f} sec")
                     print(f"Anomaly Score  : {score:.6f}")
                     print(f"Base Threshold : {base_threshold:.6f}")
                     print(f"Extreme Thresh : {ext_threshold:.6f}")
-                    print(f"Conse Susp     : {consecutive_suspicious}")
+                    print(f"Consec Sus     : {consecutive_suspicious}")
+                    print(f"Is Extreme     : {is_extreme}")
+                    print(f"Extreme Count  : {consecutive_extreme}")
                     print(f"High Risk      : {high_risk}")
                     print("-" * 50)
                 else:
@@ -267,7 +308,10 @@ def save_monitoring_plots(history, phase_steps):
         plt.axvline(x=x, linestyle=":", linewidth=1)
         text_x = x + 3 if x == 0 else x + 3
         plt.text(x, max(scores), label, rotation=90, verticalalignment="top")
-    plt.plot(steps, scores, label="Anomaly Score")
+    score_series = pd.Series(scores)
+    smooth_scores = score_series.rolling(window=10, min_periods=1).mean()
+    plt.plot(steps, scores, label="Raw Anomaly Score", alpha=0.35)
+    plt.plot(steps, smooth_scores, label="Smoothed Score")
     plt.plot(steps, base_thresholds, linestyle="--", label="Base Threshold")
     plt.plot(steps, ext_thresholds, linestyle="--", label="Extreme Threshold")
     plt.xlabel("Window Step")

@@ -5,8 +5,10 @@ FEATURES = [
     "total_bytes",
     "avg_bytes",
     "iat_mean",
+    "iat_std",
     "unique_dst_ip",
-    "unique_dst_port"
+    "unique_dst_port",
+    "top_dst_port_ratio"
 ]
 
 def scoring(pcap_path, window_size, model):
