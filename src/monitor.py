@@ -70,12 +70,19 @@ def classify_score(high_risk, is_suspicious):
 
 def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step_size=1):
     recent_scores = deque(maxlen=30)
+    # Main Experiment
     risk_window = deque(maxlen=60)
     Persistence_threshold = 60
     Suspicious_Ratio_Threshold = 0.75
 
+    # Demo
+    # risk_window = deque(maxlen=20)
+    # Persistence_threshold = 20
+    
+
     phase_steps = {"NORMAL": 0}
     pending_phase = None
+    current_phase = "NORMAL"
 
     Min_Base_Threshold = 0.08
     consecutive_suspicious = 0
@@ -170,8 +177,11 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
             if current_time - last_eval >= step_size:
                 current_step = step_count
 
-                if pending_phase is not None and pending_phase not in phase_steps:
-                    phase_steps[pending_phase] = current_step
+                if pending_phase is not None:
+                    current_phase = pending_phase
+
+                    if pending_phase not in phase_steps:
+                        phase_steps[pending_phase] = current_step
                     pending_phase = None
                 
                 feat = compute_features(buffer)
@@ -239,7 +249,8 @@ def monitor(interface, model, base_threshold, ext_threshold, window_size=5, step
                         "consecutive_suspicious": consecutive_suspicious,
                         "consecutive_extreme": consecutive_extreme,
                         "is_extreme": is_extreme,
-                        "min_packet_gate": feat["packet_count"] >= Min_Packets_for_Attack
+                        "min_packet_gate": feat["packet_count"] >= Min_Packets_for_Attack,
+                        "phase": current_phase
                     })
 
                     print(f"Steps          : {current_step}")
